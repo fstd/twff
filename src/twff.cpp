@@ -41,6 +41,7 @@ int num_retry_gs                 = 2;
 int num_retry_ms                 = 2;
 bool force_master_complete       = false;
 bool colored                     = false;
+bool case_insensitive            = false;
 bool hide_empty_srv              = false;
 bool srv_show_players            = false;
 const char *output_file          = "-";
@@ -94,15 +95,15 @@ void output_servers()
     regex_t *map_regex  = srvmap_expr  ? new regex_t : NULL;
     regex_t *ver_regex  = srvver_expr  ? new regex_t : NULL;
 
-    if (type_regex && regcomp(type_regex, srvtype_expr, REG_EXTENDED) != 0)
+    if (type_regex && regcomp(type_regex, srvtype_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) != 0)
         {fprintf(stderr, "could not compile gametype regexp, ignoring\n");delete type_regex;type_regex = NULL;}
-    if (name_regex && regcomp(name_regex, srvname_expr, REG_EXTENDED) != 0)
+    if (name_regex && regcomp(name_regex, srvname_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) != 0)
         {fprintf(stderr, "could not compile srvname regexp, ignoring\n");delete name_regex;name_regex = NULL;}
-    if (addr_regex && regcomp(addr_regex, srvaddr_expr, REG_EXTENDED) != 0)
+    if (addr_regex && regcomp(addr_regex, srvaddr_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) != 0)
         {fprintf(stderr, "could not compile addr regexp, ignoring\n");delete addr_regex;addr_regex = NULL;}
-    if (map_regex && regcomp(map_regex, srvmap_expr, REG_EXTENDED) != 0)
+    if (map_regex && regcomp(map_regex, srvmap_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) != 0)
         {fprintf(stderr, "could not compile map regexp, ignoring\n");delete map_regex;map_regex = NULL;}
-    if (ver_regex && regcomp(ver_regex, srvver_expr, REG_EXTENDED) != 0)
+    if (ver_regex && regcomp(ver_regex, srvver_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) != 0)
         {fprintf(stderr, "could not version regexp, ignoring\n");delete ver_regex;ver_regex = NULL;}
 
     for (std::list<Server*>::const_iterator it = list_done.begin(); it != list_done.end(); ++it) {
@@ -150,7 +151,7 @@ void output_players()
     bool showed_one = false;
     regex_t *player_regex = player_expr ? new regex_t : NULL;
 
-    if (player_regex && regcomp(player_regex, player_expr, REG_EXTENDED) == 0) {
+    if (player_regex && regcomp(player_regex, player_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) == 0) {
         for (std::list<Server*>::const_iterator it_srv = list_done.begin(); it_srv != list_done.end(); ++it_srv) {
             Server *srv = *it_srv;
             for (std::set<Player*>::const_iterator it_pl = srv->pmap().begin(); it_pl != srv->pmap().end(); ++it_pl) {
@@ -430,6 +431,8 @@ bool process_args(int argc, char **argv)
             force_master_complete = true;
         } else if (strcmp("-c", argv[z]) == 0) {
             colored = true;
+        } else if (strcmp("-i", argv[z]) == 0) {
+            case_insensitive = true;
         } else if (strcmp("-r", argv[z]) == 0) {
             if (z + 1 < argc) num_retry_ms = strtol(argv[++z], NULL, 10);
             else return false;
@@ -482,7 +485,8 @@ void usage(const char *a0, int ec)
         "\t-v: increase verbosity\n"
         "\t-h: display this usage information statement\n"
         "\t-f: force rerequesting server list if received less than announced by msrv\n"
-        "\t-c enable bash color sequences\n"
+        "\t-c: enable bash color sequences\n"
+        "\t-i: case-insensitive regexps\n"
         "\t-se: do not display empty servers\n"
         "\t-sp: also output players, for matched servers\n"
         "\t-o FILE: write output to file instead of stdout\n"
