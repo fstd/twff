@@ -39,6 +39,9 @@ int num_threads                  = 20;
 int verbosity                    = 0;
 int num_retry_gs                 = 2;
 int num_retry_ms                 = 2;
+int lead_nl                      = 0;
+int players_per_line             = 1;
+bool no_status_msg               = false;
 bool force_master_complete       = false;
 bool colored                     = false;
 bool case_insensitive            = false;
@@ -87,7 +90,7 @@ void output_servers()
     if (!srvtype_expr && !srvmap_expr && !srvname_expr && !srvver_expr && !srvaddr_expr) return;
 
     static char addrbuf[22];
-    bool show, showed_one = false;
+    bool show, shown_one = false;
 
     regex_t *type_regex = srvtype_expr ? new regex_t : NULL;
     regex_t *name_regex = srvname_expr ? new regex_t : NULL;
@@ -119,7 +122,8 @@ void output_servers()
         if (!show && ver_regex && regexec(ver_regex, srv->getVersion(), 0, NULL, 0) == 0) show = true;
 
         if (show && (!hide_empty_srv || srv->pmap().size() > 0)) {
-            showed_one = true;
+            if (!shown_one) while(lead_nl-- > 0) oprintf("\n");
+            shown_one = true;
             oprintf("\"%s%s%s\" - %s%s - %s%s (%s%i/%i%s) - %s%s:%i%s - %s%s%s - [%s%x;%i%s]\n",
                 colored?"\033[01;32m":"", srv->getTrimmedName(),                      colored?"\033[0m":"",
                 colored?"\033[01;31m":"", srv->getGameType(), srv->getMap(),          colored?"\033[0m":"",
@@ -129,13 +133,25 @@ void output_servers()
                 colored?"\033[01;37m":"",srv->getFlags(), srv->getProgress(),         colored?"\033[0m":"");
                 /*TODO: write semantic colorizer to get rid of this crap*/
 
-            if (srv_show_players)
-                for (std::set<Player*>::const_iterator itt = srv->pmap().begin(); itt != srv->pmap().end(); ++itt)
-                    oprintf("\tplayer: \"%s%s%s\"\n", colored?"\033[01;33m":"",(*itt)->getName(),colored?"\033[0m":"");
+
+            if (srv_show_players) {
+                int lc=0;
+                for (std::set<Player*>::const_iterator itt = srv->pmap().begin(); itt != srv->pmap().end(); ++itt) {
+                    oprintf("%s\"%s%s%s\"",lc==0?"\t":"; ", (colored?"\033[01;33m":""), (*itt)->getName(),colored?"\033[0m":"");
+                    if ((++lc) == players_per_line) {
+                        oprintf("\n");
+                        lc=0;
+                    }
+                }
+                if (lc) oprintf("\n");
+            }
         }
     }
-    if (showed_one) oprintf("--- end of server listing ---\n");
-    else            oprintf("--- no server matched ---\n");
+
+    if (!no_status_msg) {
+        if (shown_one) oprintf("--- end of server listing ---\n");
+        else           oprintf("--- no server matched ---\n");
+    }
 
     if(type_regex)  {regfree(type_regex);delete type_regex;}
     if (name_regex) {regfree(name_regex);delete name_regex;}
@@ -148,7 +164,7 @@ void output_players()
 {
     if (!player_expr || strlen(player_expr) == 0) return;
 
-    bool showed_one = false;
+    bool shown_one = false;
     regex_t *player_regex = player_expr ? new regex_t : NULL;
 
     if (player_regex && regcomp(player_regex, player_expr, REG_EXTENDED|(case_insensitive?REG_ICASE:0)) == 0) {
@@ -156,7 +172,8 @@ void output_players()
             Server *srv = *it_srv;
             for (std::set<Player*>::const_iterator it_pl = srv->pmap().begin(); it_pl != srv->pmap().end(); ++it_pl) {
                 if (regexec(player_regex, (*it_pl)->getName(), 0, NULL, 0) == 0) {
-                    showed_one = true;
+                    if (!shown_one) while(lead_nl-- > 0) oprintf("\n");
+                    shown_one = true;
                     oprintf("\"%s%s%s\" is on %s%s:%i%s - %s%s - %s%s (%s%i/%i%s) - \"%s%s%s\"\n",
                         colored?"\033[01;33m":"", (*it_pl)->getName(),                        colored?"\033[0m":"",
                         colored?"\033[01;34m":"", srv->getAddrStr(), srv->getPort(),          colored?"\033[0m": "",
@@ -167,9 +184,10 @@ void output_players()
                 }
             }
         }
-        if (showed_one) oprintf("--- end of players listing ---\n");
-        else            oprintf("--- no players matched ---\n");
-
+        if (!no_status_msg) {
+            if (shown_one) oprintf("--- end of players listing ---\n");
+            else           oprintf("--- no players matched ---\n");
+        }
     } else fprintf(stderr, "could not compile player name regexp, cant continue\n");
     delete player_regex;
 }
@@ -429,6 +447,11 @@ bool process_args(int argc, char **argv)
             else return false;
         } else if (strcmp("-f", argv[z]) == 0) {
             force_master_complete = true;
+        } else if (strcmp("-l", argv[z]) == 0) {
+            if (z + 1 < argc) players_per_line = strtol(argv[++z], NULL, 10);
+            else return false;
+        } else if (strcmp("-e", argv[z]) == 0) {
+            no_status_msg = true;
         } else if (strcmp("-c", argv[z]) == 0) {
             colored = true;
         } else if (strcmp("-i", argv[z]) == 0) {
@@ -441,6 +464,9 @@ bool process_args(int argc, char **argv)
             else return false;
         } else if (strcmp("-T", argv[z]) == 0) {
             if (z + 1 < argc) num_threads = strtol(argv[++z], NULL, 10);
+            else return false;
+        } else if (strcmp("-N", argv[z]) == 0) {
+            if (z + 1 < argc) lead_nl = strtol(argv[++z], NULL, 10);
             else return false;
         } else if (strcmp("-tm", argv[z]) == 0) {
             if (z + 1 < argc) recv_timeout_ms = strtol(argv[++z], NULL, 10);
@@ -487,11 +513,14 @@ void usage(const char *a0, int ec)
         "\t-f: force rerequesting server list if received less than announced by msrv\n"
         "\t-c: enable bash color sequences\n"
         "\t-i: case-insensitive regexps\n"
+        "\t-e: hide trailing statusmsg after output (e.g. 'end of player listing')\n"
         "\t-se: do not display empty servers\n"
         "\t-sp: also output players, for matched servers\n"
         "\t-o FILE: write output to file instead of stdout\n"
         "\t-m STRING: specify a comman seperated list of master servers\n"
         "\t-p REGEXP: output all players with name matching REGEXP (default: all)\n"
+        "\t-l NUMBR: in combination with -sp, put NUMBER players on one line\n"
+        "\t-N NUMBER: print as many newlines before outputting\n"
         "\t-r NUMBER: number of retries for unresponsive master servers\n"
         "\t-R NUMBER: number of retries for unresponsive game servers\n"
         "\t-T NUMBER: number of threads\n"
