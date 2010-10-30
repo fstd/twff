@@ -51,9 +51,9 @@ struct sockaddr_in *bailmkaddr(const char *host, u_int16_t port)
     server->sin_family = AF_INET;
     errno = 0;
     hp = gethostbyname(host);
-    if (hp == NULL) {
-        if (errno == 0) return NULL;
-        else {perror("gethostbyname");exit(EXIT_FAILURE);}
+    if (hp == NULL || errno) {
+        delete server;
+        return NULL;
     }
     memcpy((char *) &server->sin_addr, (char *) hp->h_addr, hp->h_length);
     server->sin_port = htons(port);

@@ -3,3 +3,4 @@
 obj
 src/*.o
 twff
+twff.out
