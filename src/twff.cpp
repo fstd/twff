@@ -42,6 +42,7 @@ int num_retry_ms                 = 2;
 int lead_nl                      = 0;
 int players_per_line             = 1;
 bool no_status_msg               = false;
+bool summary                     = false;
 bool force_master_complete       = false;
 bool colored                     = false;
 bool case_insensitive            = false;
@@ -452,6 +453,8 @@ bool process_args(int argc, char **argv)
             else return false;
         } else if (strcmp("-e", argv[z]) == 0) {
             no_status_msg = true;
+        } else if (strcmp("-S", argv[z]) == 0) {
+            summary = true;
         } else if (strcmp("-c", argv[z]) == 0) {
             colored = true;
         } else if (strcmp("-i", argv[z]) == 0) {
@@ -516,6 +519,7 @@ void usage(const char *a0, int ec)
         "\t-e: hide trailing statusmsg after output (e.g. 'end of player listing')\n"
         "\t-se: do not display empty servers\n"
         "\t-sp: also output players, for matched servers\n"
+        "\t-S: print stats as last line\n"
         "\t-o FILE: write output to file instead of stdout\n"
         "\t-m STRING: specify a comman seperated list of master servers\n"
         "\t-p REGEXP: output all players with name matching REGEXP (default: all)\n"
@@ -568,6 +572,13 @@ int main(int argc, char **argv)
 
     output_servers();
     output_players();
+
+    if (summary) {
+        int pcount=0;
+        for (std::list<Server*>::const_iterator it = list_done.begin(); it != list_done.end(); ++it)
+            pcount += (*it)->pmap().size();
+        oprintf("%i players on %i servers (%i missed)\n",pcount,list_done.size(),list_fail.size());
+    }
 
     if (str_out) fclose(str_out);
 
