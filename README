@@ -1,0 +1,15 @@
+this program prints information about whats currently going on in the teeworlds world.
+it will contact master- and game servers, print the requested information, and terminate.
+hence, for a continous view, its best run in combination with watch, or in the background 
+writing to a file, with watch/tail as its front end.
+
+for a list of supported parameters, run ./twff -h
+
+if you want to see whats going on (to make sure its not stuck), call it with -v
+
+regards, 
+fisted (http://github.com/fisted)
+
+TODO: write a proper readme file
+
+
