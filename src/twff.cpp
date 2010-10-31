@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <regex.h>
+#include <sys/time.h>
 
 #include <cstdlib>
 #include <cstdio>
@@ -32,6 +33,7 @@ std::list<const char*> list_masters;
 
 pthread_mutex_t mutex_work;
 FILE *str_out                    = stdout;
+FILE *str_raw                    = NULL;
 
 int recv_timeout_ms              = 3;
 int recv_timeout_gs              = 3;
@@ -43,12 +45,15 @@ int lead_nl                      = 0;
 int players_per_line             = 1;
 bool no_status_msg               = false;
 bool summary                     = false;
+bool output_append               = false;
+bool raw_output_append           = false;
 bool force_master_complete       = false;
 bool colored                     = false;
 bool case_insensitive            = false;
 bool hide_empty_srv              = false;
 bool srv_show_players            = false;
 const char *output_file          = "-";
+const char *raw_output_file      = NULL;
 
 const char *player_expr          = ".*";
 const char *srvtype_expr         = NULL;
@@ -79,6 +84,7 @@ int construct_getcount(unsigned char *buffer);
 
 void *process_queue(void*arg);
 int oprintf(const char *format, ...);
+int rprintf(const char *format, ...);
 
 bool init(int argc, char **argv);
 bool process_args(int argc, char **argv);
@@ -88,7 +94,7 @@ int main(int argc, char **argv);
 
 void output_servers()
 {
-    if (!srvtype_expr && !srvmap_expr && !srvname_expr && !srvver_expr && !srvaddr_expr) return;
+    if (!srvtype_expr && !srvmap_expr && !srvname_expr && !srvver_expr && !srvaddr_expr && !raw_output_file) return;
 
     static char addrbuf[22];
     bool show, shown_one = false;
@@ -122,6 +128,17 @@ void output_servers()
         if (!show && map_regex && regexec(map_regex, srv->getMap(), 0, NULL, 0) == 0) show = true;
         if (!show && ver_regex && regexec(ver_regex, srv->getVersion(), 0, NULL, 0) == 0) show = true;
 
+        if (raw_output_file) {
+            rprintf("S \"%s:%i\";\"%s\";\"%s\";%i;%i;%x;%i;\"%s\";\"%s\"\n", srv->getAddrStr(), srv->getPort(), srv->getGameType(), srv->getMap(), srv->getNumPlayers(),
+                    srv->getMaxPlayers(), srv->getFlags(), srv->getProgress(), srv->getVersion(), srv->getTrimmedName());
+            if (srv->pmap().size() > 0) {
+                for (std::set<Player*>::const_iterator itt = srv->pmap().begin(); itt != srv->pmap().end(); ++itt)
+                    rprintf("%s\"%s\"",itt==srv->pmap().begin()?"P ":";",(*itt)->getName());
+                rprintf("\n");
+            }
+        }
+
+
         if (show && (!hide_empty_srv || srv->pmap().size() > 0)) {
             if (!shown_one) while(lead_nl-- > 0) oprintf("\n");
             shown_one = true;
@@ -148,7 +165,6 @@ void output_servers()
             }
         }
     }
-
     if (!no_status_msg) {
         if (shown_one) oprintf("--- end of server listing ---\n");
         else           oprintf("--- no server matched ---\n");
@@ -398,7 +414,7 @@ int oprintf(const char *format, ...)
     static bool trouble = false;
     if (trouble) return 0;
     if (!str_out) {
-        if (!((str_out = fopen(output_file, "w")))) {
+        if (!((str_out = fopen(output_file, output_append?"a":"w")))) {
             perror(output_file);
             trouble = true;
             fprintf(stderr, "output will go to nowhere\n");
@@ -408,6 +424,26 @@ int oprintf(const char *format, ...)
     va_list l;
     va_start(l,format);
     int r = vfprintf(str_out, format, l);
+    va_end(l);
+    return r;
+}
+
+int rprintf(const char *format, ...)
+{
+    static bool trouble = false;
+    if (trouble || !raw_output_file) return 0;
+    if (!str_raw) {
+        if (!((str_raw = fopen(raw_output_file, raw_output_append?"a":"w")))) {
+            perror(raw_output_file);
+            trouble = true;
+            raw_output_file = NULL;
+            fprintf(stderr, "raw output will go to nowhere\n");
+        }
+    }
+    if (trouble) return 0;
+    va_list l;
+    va_start(l,format);
+    int r = vfprintf(str_raw, format, l);
     va_end(l);
     return r;
 }
@@ -455,6 +491,13 @@ bool process_args(int argc, char **argv)
             no_status_msg = true;
         } else if (strcmp("-S", argv[z]) == 0) {
             summary = true;
+        } else if (strcmp("-ao", argv[z]) == 0) {
+            output_append = true;
+        } else if (strcmp("-aO", argv[z]) == 0) {
+            raw_output_append = true;
+        } else if (strcmp("-O", argv[z]) == 0) {
+            if (z + 1 < argc) raw_output_file = strdup(argv[++z]);
+            else return false;
         } else if (strcmp("-c", argv[z]) == 0) {
             colored = true;
         } else if (strcmp("-i", argv[z]) == 0) {
@@ -510,6 +553,7 @@ bool process_args(int argc, char **argv)
 void usage(const char *a0, int ec)
 {
     fprintf(stderr, "usage: %s [parameters]\n", a0);
+    /*TODO switch to getopt & friends*/
     fprintf(stderr,
         "\t-v: increase verbosity\n"
         "\t-h: display this usage information statement\n"
@@ -520,6 +564,9 @@ void usage(const char *a0, int ec)
         "\t-se: do not display empty servers\n"
         "\t-sp: also output players, for matched servers\n"
         "\t-S: print stats as last line\n"
+        "\t-ao do not truncate output file, i.e. append to it\n"
+        "\t-aO do not truncate raw output file, i.e. append to it\n"
+        "\t-O FILE: print raw (unfiltered) data to file (default: don't print raw data)\n"
         "\t-o FILE: write output to file instead of stdout\n"
         "\t-m STRING: specify a comman seperated list of master servers\n"
         "\t-p REGEXP: output all players with name matching REGEXP (default: all)\n"
@@ -544,17 +591,20 @@ int main(int argc, char **argv)
     pthread_t *threads;
     std::set<u_int64_t> dup_kill;
     std::list<u_int64_t> tmplist;
-
+    timeval tmstart, tmend, tgend;
     if (!init(argc, argv)) usage(argv[0], EXIT_FAILURE);
 
     threads = (pthread_t*) malloc(sizeof(pthread_t) * num_threads);
 
+    gettimeofday(&tmstart,NULL);
     request_serverlists(&tmplist);
+    gettimeofday(&tmend,NULL);
     for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it) {
         if (dup_kill.count(*it)) continue;
         dup_kill.insert(*it);
         list_work.push_back(new Server(*it));
     }
+
 
     if (verbosity >= 1) fprintf(stderr, "got %i servers from master servers\n", list_work.size());
 
@@ -563,20 +613,30 @@ int main(int argc, char **argv)
     for (int z = 0; z < num_threads; ++z)
         if (pthread_join(threads[z], NULL) != 0) fprintf(stderr, "failed to join thread %i\n", z);
 
-    free(threads);
+    gettimeofday(&tgend,NULL);
 
+    free(threads);
     if (verbosity >= 1) {
         fprintf(stderr, "\n");
         if (list_fail.size() > 0) fprintf(stderr, "%i servers failed to respond\n", list_fail.size());
+    }
+
+    int pcount=0;
+    if (raw_output_file || summary)
+        for (std::list<Server*>::const_iterator it = list_done.begin(); it != list_done.end(); ++it)
+            pcount += (*it)->pmap().size();
+
+    if (raw_output_file) {
+        u_int64_t tstart = ((u_int64_t)(tmstart.tv_sec))*1000 + tmstart.tv_usec/1000;
+        unsigned int mdur = (int)((((u_int64_t)(tmend.tv_sec))*1000 + tmend.tv_usec/1000) - tstart);
+        unsigned int gdur = (int)((((u_int64_t)(tgend.tv_sec))*1000 + tgend.tv_usec/1000) - (tstart + mdur));
+        rprintf("D %llu;%i;%i;%i;%u;%u\n",tstart,pcount,list_done.size(),list_fail.size(),mdur,gdur);
     }
 
     output_servers();
     output_players();
 
     if (summary) {
-        int pcount=0;
-        for (std::list<Server*>::const_iterator it = list_done.begin(); it != list_done.end(); ++it)
-            pcount += (*it)->pmap().size();
         oprintf("%i players on %i servers (%i missed)\n",pcount,list_done.size(),list_fail.size());
     }
 
