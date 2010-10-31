@@ -129,12 +129,10 @@ void output_servers()
         if (!show && ver_regex && regexec(ver_regex, srv->getVersion(), 0, NULL, 0) == 0) show = true;
 
         if (raw_output_file) {
-            rprintf("S \"%s:%i\";\"%s\";\"%s\";%i;%i;%x;%i;\"%s\";\"%s\"\n", srv->getAddrStr(), srv->getPort(), srv->getGameType(), srv->getMap(), srv->getNumPlayers(),
-                    srv->getMaxPlayers(), srv->getFlags(), srv->getProgress(), srv->getVersion(), srv->getTrimmedName());
+            rprintf("S;%s:%i;%i;%i;%x;%i\n%s\n%s\n%s\n%s\n", srv->getAddrStr(), srv->getPort(),srv->getNumPlayers(),srv->getMaxPlayers(), srv->getFlags(), srv->getProgress(), srv->getGameType(), srv->getMap(), srv->getVersion(), srv->getTrimmedName());
             if (srv->pmap().size() > 0) {
                 for (std::set<Player*>::const_iterator itt = srv->pmap().begin(); itt != srv->pmap().end(); ++itt)
-                    rprintf("%s\"%s\"",itt==srv->pmap().begin()?"P ":";",(*itt)->getName());
-                rprintf("\n");
+                    rprintf("P;%s\n",(*itt)->getName());
             }
         }
 
@@ -634,7 +632,7 @@ int main(int argc, char **argv)
         u_int64_t tstart = ((u_int64_t)(tmstart.tv_sec))*1000 + tmstart.tv_usec/1000;
         unsigned int mdur = (int)((((u_int64_t)(tmend.tv_sec))*1000 + tmend.tv_usec/1000) - tstart);
         unsigned int gdur = (int)((((u_int64_t)(tgend.tv_sec))*1000 + tgend.tv_usec/1000) - (tstart + mdur));
-        rprintf("D %llu;%i;%i;%i;%i;%u;%u\n",tstart,sucm,pcount,list_done.size(),list_fail.size(),mdur,gdur);
+        rprintf("D;%llu;%i;%i;%i;%i;%u;%u\n",tstart,sucm,pcount,list_done.size(),list_fail.size(),mdur,gdur);
     }
 
     output_servers();
