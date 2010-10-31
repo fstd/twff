@@ -209,10 +209,10 @@ void output_players()
     delete player_regex;
 }
 
-void request_serverlists(std::list<u_int64_t> *destination)
+void request_serverlists(std::list<u_int64_t> *destination, int *numSucMasters)
 {
     char *host, *tmp;
-    int port;
+    int port, sucm=0;
     for (std::list<const char *>::const_iterator it = list_masters.begin(); it != list_masters.end(); ++it) {
         tmp = strdup(*it);
         if (strchr(tmp, ':')) {
@@ -223,9 +223,12 @@ void request_serverlists(std::list<u_int64_t> *destination)
             port = DEFAULT_MASTERPORT;
             host = tmp;
         }
-        request_serverlist(destination, -1, host, (u_int16_t) port, num_retry_ms, force_master_complete);
+        if (request_serverlist(destination, -1, host, (u_int16_t) port, num_retry_ms, force_master_complete) > 0)
+            ++sucm;
+
         free(host);
     }
+    if (numSucMasters) *numSucMasters=sucm;
 }
 
 int request_serverlist(std::list<u_int64_t> *destination, int maxCount, const char *masterHost, u_int16_t masterPort, int numRetry, bool forceComplete)
@@ -592,12 +595,13 @@ int main(int argc, char **argv)
     std::set<u_int64_t> dup_kill;
     std::list<u_int64_t> tmplist;
     timeval tmstart, tmend, tgend;
+    int sucm;
     if (!init(argc, argv)) usage(argv[0], EXIT_FAILURE);
 
     threads = (pthread_t*) malloc(sizeof(pthread_t) * num_threads);
 
     gettimeofday(&tmstart,NULL);
-    request_serverlists(&tmplist);
+    request_serverlists(&tmplist, &sucm);
     gettimeofday(&tmend,NULL);
     for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it) {
         if (dup_kill.count(*it)) continue;
@@ -630,7 +634,7 @@ int main(int argc, char **argv)
         u_int64_t tstart = ((u_int64_t)(tmstart.tv_sec))*1000 + tmstart.tv_usec/1000;
         unsigned int mdur = (int)((((u_int64_t)(tmend.tv_sec))*1000 + tmend.tv_usec/1000) - tstart);
         unsigned int gdur = (int)((((u_int64_t)(tgend.tv_sec))*1000 + tgend.tv_usec/1000) - (tstart + mdur));
-        rprintf("D %llu;%i;%i;%i;%u;%u\n",tstart,pcount,list_done.size(),list_fail.size(),mdur,gdur);
+        rprintf("D %llu;%i;%i;%i;%i;%u;%u\n",tstart,sucm,pcount,list_done.size(),list_fail.size(),mdur,gdur);
     }
 
     output_servers();
