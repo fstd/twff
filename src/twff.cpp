@@ -46,7 +46,7 @@ int num_retry_gs                 = 2;
 int num_retry_ms                 = 2;
 int lead_nl                      = 0;
 int players_per_line             = 1;
-bool no_status_msg               = false;
+bool no_status_msg               = true;
 bool summary                     = false;
 bool output_append               = false;
 bool raw_output_append           = false;
@@ -101,7 +101,7 @@ u_int32_t getDWordNC(const void* buf);
 
 bool init(int argc, char **argv);
 bool process_args(int argc, char **argv);
-void usage(const char *a0, int ec) __attribute__ ((noreturn));
+void usage(FILE *str, const char *a0, int ec) __attribute__ ((noreturn));
 
 int main(int argc, char **argv);
 
@@ -545,8 +545,8 @@ u_int32_t getDWordNC(const void* buf)
 bool init(int argc, char **argv)
 {
 	if (!process_args(argc, argv)) return false;
-	if (strcmp("-", output_file) != 0)
-		str_out = NULL;//lazy fopen
+	if (strcmp("-", output_file) != 0) str_out = NULL;//lazy fopen
+	if (raw_output_file && strcmp("-", raw_output_file) == 0) str_raw = stdout;
 	pthread_mutex_init(&mutex_work, NULL);
 	if (list_masters.empty()) {
 		list_masters.push_back("master1.teeworlds.com");
@@ -564,7 +564,7 @@ bool process_args(int argc, char **argv)
 		if (strcmp("-v", argv[z]) == 0) {
 			++verbosity;
 		} else if (strcmp("-h", argv[z]) == 0) {
-			usage(argv[0], EXIT_SUCCESS);
+			usage(stdout, argv[0], EXIT_SUCCESS);
 		} else if (strcmp("-m", argv[z]) == 0) {
 			if (z + 1 < argc) {
 				char *mlist = strdup(argv[++z]);
@@ -582,7 +582,7 @@ bool process_args(int argc, char **argv)
 			if (z + 1 < argc) players_per_line = strtol(argv[++z], NULL, 10);
 			else return false;
 		} else if (strcmp("-e", argv[z]) == 0) {
-			no_status_msg = true;
+			no_status_msg = false;
 		} else if (strcmp("-S", argv[z]) == 0) {
 			summary = true;
 		} else if (strcmp("-ao", argv[z]) == 0) {
@@ -644,37 +644,32 @@ bool process_args(int argc, char **argv)
 	return true;
 }
 
-void usage(const char *a0, int ec)
+void usage(FILE *str,const char *a0, int ec)
 {
-	fprintf(stderr, "usage: %s [parameters]\n", a0);
-	fprintf(stderr,
+	/*this fits on 80x25, complete list is in README*/
+	fprintf(str, "usage: %s [parameters]\n", a0);
+	fprintf(str,
 		"\t-v: increase verbosity\n"
-		"\t-h: display this usage information statement\n"
-		"\t-f: force rerequesting server list if received less than announced by msrv\n"
 		"\t-c: enable bash color sequences\n"
-		"\t-i: case-insensitive regexps\n"
-		"\t-e: hide trailing statusmsg after output (e.g. 'end of player listing')\n"
+		"\t-i: case-insensitive matching\n"
 		"\t-se: do not display empty servers\n"
-		"\t-sp: also output players, for matched servers\n"
-		"\t-S: print stats as last line\n"
-		"\t-ao do not truncate output file, i.e. append to it\n"
-		"\t-aO do not truncate raw output file, i.e. append to it\n"
-		"\t-O FILE: print raw (unfiltered) data to file (default: don't print raw data)\n"
+		"\t-sp: also output players, for matching servers\n"
+		"\t-l NUMBER: in combination with -sp, put NUMBER players on one line\n"
 		"\t-o FILE: write output to file instead of stdout\n"
-		"\t-m STRING: specify a comman seperated list of master servers\n"
-		"\t-p REGEXP: output all players with name matching REGEXP (default: all)\n"
-		"\t-l NUMBR: in combination with -sp, put NUMBER players on one line\n"
-		"\t-N NUMBER: print as many newlines before outputting\n"
+		"\t-m STRING: specify a comma seperated list of master servers\n"
 		"\t-r NUMBER: number of retries for unresponsive master servers\n"
 		"\t-R NUMBER: number of retries for unresponsive game servers\n"
 		"\t-T NUMBER: number of threads\n"
-		"\t-tm NUMBER: read timeout for master servers\n"
-		"\t-tg NUMBER: read timeout for game servers\n"
-		"\t-st REGEXP: output all servers with type matching REGEXP (default: none)\n"
-		"\t-sn REGEXP: output all servers with name matching REGEXP (default: none)\n"
-		"\t-sa REGEXP: output all servers with addr (host:port) matching REGEXP (default: none)\n"
-		"\t-sm REGEXP: output all servers with map matching REGEXP (default: none)\n"
-		"\t-sv REGEXP: output all servers with version matching REGEXP (default: none)\n"
+		"\t-tm NUMBER: read timeout for master servers in seconds\n"
+		"\t-tg NUMBER: read timeout for game servers in seconds\n"
+		"\t-p REGEXP: output all players with name matching REGEXP\n"
+		"\t-st REGEXP: output all servers with type matching REGEXP\n"
+		"\t-sn REGEXP: output all servers with name matching REGEXP\n"
+		"\t-sa REGEXP: output all servers with host:port matching REGEXP\n"
+		"\t-sm REGEXP: output all servers with map matching REGEXP\n"
+		"\t-sv REGEXP: output all servers with version matching REGEXP\n"
+		"\t-h: display this usage information statement\n"
+		"!! Consult the README file for a complete list and details !!\n"
 	);
 	exit(ec);
 }
@@ -687,7 +682,7 @@ int main(int argc, char **argv)
 	std::list<u_int64_t> tmplist;
 	timeval tmstart, tmend, tgend;
 	int sucm;
-	if (!init(argc, argv)) usage(argv[0], EXIT_FAILURE);
+	if (!init(argc, argv)) usage(stderr, argv[0], EXIT_FAILURE);
 
 	threads = (pthread_t*) malloc(sizeof(pthread_t) * num_threads);
 	tids = (int*) malloc(sizeof(int) * num_threads);
@@ -724,7 +719,7 @@ int main(int argc, char **argv)
 		for (std::list<Server*>::const_iterator it = list_done.begin(); it != list_done.end(); ++it)
 			pcount += (*it)->pmap().size();
 
-	if (raw_output_file && !(str_raw = fopen(raw_output_file, raw_output_append ? "a" : "w"))) {
+	if (!str_raw && raw_output_file && !(str_raw = fopen(raw_output_file, raw_output_append ? "a" : "w"))) {
 		perror(raw_output_file);
 		fprintf(stderr, "raw output will go to nowhere\n");
 	}

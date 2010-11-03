@@ -3,7 +3,64 @@ it will contact master- and game servers, print the requested information, and t
 hence, for a continous view, its best run in combination with watch, or in the background 
 writing to a file, with watch/tail as its front end.
 
-for a list of supported parameters, run ./twff -h
+List of supported parameters:
+
+  -v: increase verbosity
+
+  -f: try to get a complete server list 
+    A server list provided by a master server can be incomplete,
+      due to the unrelieable nature of UDP, and also as an
+      implication of the way teeworlds master servers operate.
+    Without -f, any server list is accepted, regardless of whether
+      the number of received servers actually matches the amount
+      the master server claimed to have available.
+    This option usually just slows things down.
+
+  -c: enable bash color sequences
+  -i: case-insensitive regexps
+  -e: hide trailing statusmsg after output (e.g. 'end of player listing')
+
+  -se: do not display empty servers
+    By default, servers with one or more attributes matching
+      your proviced regular expressions, will be printed out.
+    This will prevent empty servers from being printed.
+
+  -sp: also output players, for matching servers
+  -l NUMBR: in combination with -sp, put NUMBER players on one line
+  -S: print stats as last line
+  -ao do not truncate output file, i.e. append to it
+  -aO do not truncate raw output file, i.e. append to it
+
+  -O FILE: print raw (unfiltered) data to file (default: don't print raw)
+    The raw output will always contain every server and player,
+      but must be explicitely enabled by this option when desired.
+    Specify a file, or a dash ``-'' for stdout.
+
+  -o FILE: write output to file instead of stdout
+  -m STRING: specify a comman seperated list of master servers
+  -N NUMBER: print as many newlines before outputting
+  -r NUMBER: number of retries for unresponsive master servers
+  -R NUMBER: number of retries for unresponsive game servers
+  -T NUMBER: number of threads
+  -tm NUMBER: read timeout for master servers in seconds
+  -tg NUMBER: read timeout for game servers in seconds
+  ---- Matching ----
+
+  -p REGEXP: output all players with name matching REGEXP
+    When not specified, any player matches
+
+  -st REGEXP: output all servers with type matching REGEXP
+  -sn REGEXP: output all servers with name matching REGEXP
+  -sa REGEXP: output all servers with host:port matching REGEXP
+  -sm REGEXP: output all servers with map matching REGEXP
+  -sv REGEXP: output all servers with version matching REGEXP
+    A server matches when at least one attribute matches the given
+      expression. A missing expression will never match (unlike
+      player matching). Hence, if none of the above arguments
+      are specified, no server is printed out at all
+
+  -h : display usage information statement
+
 
 if you want to see whats going on (to make sure its not stuck), call it with -v
 
@@ -11,5 +68,6 @@ regards,
 fisted (http://github.com/fisted)
 
 TODO: write a proper readme file
+
 
 
