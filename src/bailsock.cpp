@@ -15,7 +15,8 @@
 #include <cstring>
 #include <cerrno>
 
-int bailsocket (int __domain, int __type, int __protocol, int timeout_sec) {
+int bailsocket (int __domain, int __type, int __protocol, int timeout_sec)
+{
 	timeval tv;tv.tv_sec=timeout_sec;tv.tv_usec=0;bool on=true;
 	int sock = socket(__domain, __type, __protocol);
 	if (sock < 0)
@@ -27,35 +28,35 @@ int bailsocket (int __domain, int __type, int __protocol, int timeout_sec) {
 
 ssize_t bailsendto(int __fd, const void *__buf, size_t __n, int __flags, const struct sockaddr* __addr, socklen_t __addr_len)
 {
-    ssize_t n = sendto(__fd, __buf, __n, __flags, __addr, __addr_len);
-    if (n < 0 || ((size_t) n) < __n)
-        {perror("sendto");exit(EXIT_FAILURE);}
-    return n;
+	ssize_t n = sendto(__fd, __buf, __n, __flags, __addr, __addr_len);
+	if (n < 0 || ((size_t) n) < __n)
+		{perror("sendto");exit(EXIT_FAILURE);}
+	return n;
 }
 
 ssize_t bailrecvfrom(int __fd, void * __buf, size_t __n, int __flags, struct sockaddr* __addr, socklen_t * __addr_len)
 {
-    errno = 0;
-    ssize_t n = recvfrom(__fd, __buf, __n, __flags, __addr, __addr_len);
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
-        else {perror("recvfrom");exit(EXIT_FAILURE);}
-    }
-    return n;
+	errno = 0;
+	ssize_t n = recvfrom(__fd, __buf, __n, __flags, __addr, __addr_len);
+	if (n < 0) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+		else {perror("recvfrom");exit(EXIT_FAILURE);}
+	}
+	return n;
 }
 
 struct sockaddr_in *bailmkaddr(const char *host, u_int16_t port)
 {
-    struct hostent *hp;
-    struct sockaddr_in *server = new struct sockaddr_in;
-    server->sin_family = AF_INET;
-    errno = 0;
-    hp = gethostbyname(host);
-    if (hp == NULL || errno) {
-        delete server;
-        return NULL;
-    }
-    memcpy((char *) &server->sin_addr, (char *) hp->h_addr, hp->h_length);
-    server->sin_port = htons(port);
-    return server;
+	struct hostent *hp;
+	struct sockaddr_in *server = new struct sockaddr_in;
+	server->sin_family = AF_INET;
+	errno = 0;
+	hp = gethostbyname(host);
+	if (hp == NULL || errno) {
+		delete server;
+		return NULL;
+	}
+	memcpy((char *) &server->sin_addr, (char *) hp->h_addr, hp->h_length);
+	server->sin_port = htons(port);
+	return server;
 }
