@@ -1,20 +1,27 @@
-this program prints information about whats currently going on in the teeworlds world.
-it will contact master- and game servers, print the requested information, and terminate.
-hence, for a continous view, its best run in combination with watch, or in the background 
-writing to a file, with watch/tail as its front end.
+this program prints information about whats going on in the teeworlds world.
+it will contact master- and game servers, print the requested information, 
+and then terminate. 
+hence, for a continous view, its best run in combination with watch, or in 
+the background writing to a file, with watch/tail as its front end.
 
 List of supported parameters:
 
   -v: increase verbosity
 
-  -f: try to get a complete server list 
+  -f NUMBER: re-request serverlist if at least NUMBER of server short.
     A server list provided by a master server can be incomplete,
       due to the unrelieable nature of UDP, and also as an
       implication of the way teeworlds master servers operate.
     Without -f, any server list is accepted, regardless of whether
       the number of received servers actually matches the amount
       the master server claimed to have available.
-    This option usually just slows things down.
+    With -f, if the size of the received server list contains at least 
+      NUMBER servers less than anounced, a new server list is requested
+    Reasonable values for -f start at around 10, lower values will
+      usually just slow things down without bringing in any noticable benefit
+    Note that the final server list may *still* be short, if we ran
+      out of attempts (see -R). However, in this case, the largest
+      serverlist acquired while attempting is used as the result, even if short
 
   -c: enable bash color sequences
   -i: case-insensitive regexps
@@ -62,12 +69,13 @@ List of supported parameters:
   -h : display usage information statement
 
 
-if you want to see whats going on (to make sure its not stuck), call it with -v
+if you want to see whats going on (to make sure its not stuck), call 
+  it with -v, or even with -v -v
 
 regards, 
+
 fisted (http://github.com/fisted)
 
-TODO: write a proper readme file
 
 
 

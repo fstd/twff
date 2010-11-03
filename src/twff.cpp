@@ -46,11 +46,11 @@ int num_retry_gs                 = 2;
 int num_retry_ms                 = 2;
 int lead_nl                      = 0;
 int players_per_line             = 1;
+int retry_short_srvlist          = 0;
 bool no_status_msg               = true;
 bool summary                     = false;
 bool output_append               = false;
 bool raw_output_append           = false;
-bool force_master_complete       = false;
 bool colored                     = false;
 bool case_insensitive            = false;
 bool hide_empty_srv              = false;
@@ -73,7 +73,7 @@ const int P_LIST_LEN             = 8;
 
 
 void request_serverlists(std::list<u_int64_t> *dest, int *numSucMasters);
-int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int numRetry, bool tryComplete);
+int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int numRetry, int retryThreshold);
 int perform_req_srvlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int *numSrvAnnounced);
 
 bool request_details(class Server *srv, int numRetry);
@@ -126,7 +126,7 @@ void request_serverlists(std::list<u_int64_t> *dest, int *numSucMasters)
 			port = DEFAULT_MASTERPORT;
 		}
 
-		if (request_serverlist(dest, host, (u_int16_t) port, num_retry_ms, force_master_complete) > 0)
+		if (request_serverlist(dest, host, (u_int16_t) port, num_retry_ms, retry_short_srvlist) > 0)
 			++sucm;
 
 		free(host);
@@ -135,10 +135,13 @@ void request_serverlists(std::list<u_int64_t> *dest, int *numSucMasters)
 		*numSucMasters = sucm;
 }
 
-int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int numRetry, bool tryComplete)
+int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int numRetry, int retryThreshold)
 {
 	int numsrv, numsrv_announced;
 	std::list<u_int64_t> tmplist;
+	std::list<u_int64_t> bestlist;
+	int best_numsrv = -1, best_numsrv_an = 0;
+	bool okay;
 
 	if (!dest || !masterHost || !masterPort)
 		return -1;
@@ -146,18 +149,27 @@ int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int
 	for (int attempt = 0; numRetry < 0 || attempt <= numRetry; ++attempt) {
 		tmplist.clear();
 		numsrv = perform_req_srvlist(&tmplist, masterHost, masterPort, &numsrv_announced);
-		if (numsrv > 0 && (!tryComplete || (numsrv >= numsrv_announced)))
-			break;
+
+		okay = (numsrv > 0 && (retryThreshold <= 0 || (numsrv_announced - numsrv) < retryThreshold));
+		if (tmplist.size() > bestlist.size()) {
+			best_numsrv_an = numsrv_announced;
+			best_numsrv = numsrv;
+			bestlist.clear();
+			for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it)
+				bestlist.push_back(*it);
+		}
+
+		if (okay) break;
 	}
 
-	for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it)
+	for (std::list<u_int64_t>::const_iterator it = bestlist.begin(); it != bestlist.end(); ++it)
 		dest->push_back(*it);
 
 	if (verbosity >= 1) {
-		if (numsrv < 0) fprintf(stderr, "failed to retrieve any server from \"%s:%i\"\n", masterHost, masterPort);
-		else            fprintf(stderr, "retrieved %i out of %i announced servers from \"%s:%i\"\n", numsrv, numsrv_announced, masterHost, masterPort);
+		if (best_numsrv < 0) fprintf(stderr, "failed to retrieve any server from \"%s:%i\"\n", masterHost, masterPort);
+		else            fprintf(stderr, "retrieved %i out of %i announced servers from \"%s:%i\"\n", best_numsrv, best_numsrv_an, masterHost, masterPort);
 	}
-	return numsrv;
+	return best_numsrv;
 }
 
 int perform_req_srvlist(std::list<u_int64_t> *dest, const char *masterHost, u_int16_t masterPort, int *numSrvAnnounced)
@@ -190,12 +202,12 @@ int perform_req_srvlist(std::list<u_int64_t> *dest, const char *masterHost, u_in
 
 		srv_got += (dlen - DATA_OFFSET) / 6;
 
-		if (verbosity >= 1) fprintf(stderr, "\r%i/%i          ", srv_got, srv_count);
+		if (verbosity >= 2) fprintf(stderr, "\r%i/%i          ", srv_got, srv_count);
 	}
 	if (numSrvAnnounced)
 		*numSrvAnnounced = srv_count;
 
-	if (verbosity >= 1 && srv_got >= 0) fprintf(stderr, "\n");
+	if (verbosity >= 2 && srv_got >= 0) fprintf(stderr, "\n");
 
 	ret = srv_got;
 
@@ -362,10 +374,10 @@ void *process_queue(void*arg)
 		if (!list_work.empty()) {
 			srv = list_work.front();
 			list_work.pop_front();
-			if (verbosity >= 1)
+			if (verbosity >= 2)
 				fprintf(stderr, "\r%i servers remaining         ", list_work.size());
 		} else {
-			if (verbosity >= 1)
+			if (verbosity >= 2)
 				fprintf(stderr, "\rthread %i done               ", tid);
 			pthread_mutex_unlock(&mutex_work);
 			break;
@@ -635,7 +647,8 @@ bool process_args(int argc, char **argv)
 			if (z + 1 < argc) output_file = strdup(argv[++z]);
 			else return false;
 		} else if (strcmp("-f", argv[z]) == 0) {
-			force_master_complete = true;
+			if (z + 1 < argc) retry_short_srvlist = strtol(argv[++z], NULL, 10);
+			else return false;
 		} else if (strcmp("-l", argv[z]) == 0) {
 			if (z + 1 < argc) players_per_line = strtol(argv[++z], NULL, 10);
 			else return false;
@@ -707,7 +720,7 @@ void usage(FILE *str,const char *a0, int ec)
 	/*this fits on 80x25, complete list is in README*/
 	fprintf(str, "usage: %s [parameters]\n", a0);
 	fprintf(str,
-		"\t-v: increase verbosity\n"
+		"\t-v: increase verbosity (specify twice to further increase)\n"
 		"\t-c: enable bash color sequences\n"
 		"\t-i: case-insensitive matching\n"
 		"\t-se: do not display empty servers\n"
@@ -739,7 +752,7 @@ int main(int argc, char **argv)
 	std::set<u_int64_t> dup_kill;
 	std::list<u_int64_t> tmplist;
 	timeval tmstart, tmend, tgstart, tgend;
-	int sucm = 0;
+	int sucm = 0, numdup = 0;
 	if (!init(argc, argv)) usage(stderr, argv[0], EXIT_FAILURE);
 
 	gettimeofday(&tmstart, NULL);
@@ -757,12 +770,15 @@ int main(int argc, char **argv)
 		tids[z] = z;
 
 	for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it) {
-		if (dup_kill.count(*it)) continue;
+		if (dup_kill.count(*it)) {
+			++numdup;
+			continue;
+		}
 		dup_kill.insert(*it);
 		list_work.push_back(new Server(*it));
 	}
 
-	if (verbosity >= 1) fprintf(stderr, "got %i servers from master servers\n", list_work.size());
+	if (verbosity >= 1) fprintf(stderr, "got %i servers from master servers (%i duplicates), fetching details\n", list_work.size(), numdup);
 
 	gettimeofday(&tgstart, NULL);
 
@@ -775,10 +791,9 @@ int main(int argc, char **argv)
 
 	free(threads);free(tids);
 
-	if (verbosity >= 1) {
-		fprintf(stderr, "\n");
-		if (list_fail.size() > 0) fprintf(stderr, "%i servers failed to respond\n", list_fail.size());
-	}
+
+	if (verbosity >= 2) fprintf(stderr, "\n");
+	if (verbosity >= 1) if (list_fail.size() > 0) fprintf(stderr, "%i servers failed to respond\n", list_fail.size());
 
 	int pcount = 0;
 	if (raw_output_file || summary)
