@@ -94,10 +94,15 @@ bool check_srvinfo_sanity(const char *ver, const char *name, const char *map, co
 void sanitize(char *s);
 bool is_numeric(const char *s);
 
+void stringdump(char *dest, const char *s, size_t bufsz);
+
 u_int16_t getWord(const void* buf);
 u_int16_t getWordNC(const void* buf);
 u_int32_t getDWord(const void* buf);
 u_int32_t getDWordNC(const void* buf);
+
+u_int64_t getMSTimestamp(const struct timeval *tv);
+u_int64_t getMSInterval(struct timeval *from, struct timeval *to);
 
 bool init(int argc, char **argv);
 bool process_args(int argc, char **argv);
@@ -149,8 +154,8 @@ int request_serverlist(std::list<u_int64_t> *dest, const char *masterHost, u_int
 		dest->push_back(*it);
 
 	if (verbosity >= 1) {
-		if (numsrv < 0) fprintf(stderr, "failed to retrieve any server from %s:%i:\n", masterHost, masterPort);
-		else            fprintf(stderr, "retrieved %i out of %i announced servers from %s:%i:\n", numsrv, numsrv_announced, masterHost, masterPort);
+		if (numsrv < 0) fprintf(stderr, "failed to retrieve any server from \"%s:%i\"\n", masterHost, masterPort);
+		else            fprintf(stderr, "retrieved %i out of %i announced servers from \"%s:%i\"\n", numsrv, numsrv_announced, masterHost, masterPort);
 	}
 	return numsrv;
 }
@@ -209,35 +214,39 @@ bool request_details(class Server *srv, int numRetry)
 		if (perform_req_details(srv))
 			return true;
 
-	if (verbosity >= 1) fprintf(stderr, "failed to inquire %s:%i\n", srv->getAddrStr(), srv->getPort());
+	if (verbosity >= 1) fprintf(stderr, "failed to inquire \"%s:%i\"\n", srv->getAddrStr(), srv->getPort());
 	return false;
 }
 
 bool perform_req_details(class Server *srv)
 {
-    unsigned char iobuf[1024];
-    struct sockaddr_in *server = NULL;
-    int sock,bcnt, len,bdone = 0;
-    char *ptr;
-    char *ver=NULL, *name=NULL, *map=NULL,  *type=NULL, *flags=NULL,
-    	 *prog=NULL,*numpl=NULL,*maxpl=NULL,*pname=NULL,*pscore=NULL;
-    bool ret = false;
+	unsigned char iobuf[1024];
+	struct sockaddr_in *server = NULL;
+	int sock,bcnt, len,bdone = 0;
+	char *ptr;
+	char *ver=NULL, *name=NULL, *map=NULL,  *type=NULL, *flags=NULL,
+			*prog=NULL,*numpl=NULL,*maxpl=NULL,*pname=NULL,*pscore=NULL;
+	bool ret = false;
 
-    sock = bailsocket(AF_INET, SOCK_DGRAM, 0, recv_timeout_gs);
-    if (!((server = bailmkaddr(srv->getAddrStr(), srv->getPort()))))
-        goto prd_bailout;
+	/* the variables below are only used for dumping of invalid data, will be removed someday */
+	char *origname, *ndump, *sndump, *scdump;
+	int dumplen;
 
-    bailsendto(sock, iobuf, construct_getinfo(iobuf), 0, (const sockaddr*) server, sizeof(struct sockaddr_in));
+	sock = bailsocket(AF_INET, SOCK_DGRAM, 0, recv_timeout_gs);
+	if (!((server = bailmkaddr(srv->getAddrStr(), srv->getPort()))))
+		goto prd_bailout;
 
-    bcnt = bailrecvfrom(sock, iobuf, sizeof(iobuf) - 1, 0, NULL, NULL);
-    if (bcnt <= DATA_OFFSET)
-    	goto prd_bailout;
-    iobuf[bcnt] = '\0';
+	bailsendto(sock, iobuf, construct_getinfo(iobuf), 0, (const sockaddr*) server, sizeof(struct sockaddr_in));
 
-    ptr = ((char*) iobuf) + DATA_OFFSET;
-    bcnt -= DATA_OFFSET;
+	bcnt = bailrecvfrom(sock, iobuf, sizeof(iobuf) - 1, 0, NULL, NULL);
+	if (bcnt <= DATA_OFFSET)
+		goto prd_bailout;
+	iobuf[bcnt] = '\0';
 
-    ver      = strdup(ptr);            if ((bdone += (len = strlen(ptr)) + 1) >= bcnt) goto prd_bailout;
+	ptr = ((char*) iobuf) + DATA_OFFSET;
+	bcnt -= DATA_OFFSET;
+
+	ver      = strdup(ptr);            if ((bdone += (len = strlen(ptr)) + 1) >= bcnt) goto prd_bailout;
 	name     = strdup(ptr += len + 1); if ((bdone += (len = strlen(ptr)) + 1) >= bcnt) goto prd_bailout;
 	map      = strdup(ptr += len + 1); if ((bdone += (len = strlen(ptr)) + 1) >= bcnt) goto prd_bailout;
 	type     = strdup(ptr += len + 1); if ((bdone += (len = strlen(ptr)) + 1) >= bcnt) goto prd_bailout;
@@ -257,37 +266,55 @@ bool perform_req_details(class Server *srv)
 	}
 
 	while (bdone < bcnt) {
-        pname = strdup(ptr += len + 1);
-        if ((bdone += (len = strlen(ptr)) + 1) >= bcnt)
-        	break;/*skip last string which some ddrace servers seem to append*/;
+		pname = strdup(ptr += len + 1);
+		if ((bdone += (len = strlen(ptr)) + 1) >= bcnt)
+			break;/*skip last string which some ddrace servers seem to append*/;
 
-        pscore = strdup(ptr += len + 1);
-        if ((bdone += (len = strlen(ptr)) + 1) > bcnt)
-        	goto prd_bailout;
+		pscore = strdup(ptr += len + 1);
+		if ((bdone += (len = strlen(ptr)) + 1) > bcnt)
+			goto prd_bailout;
 
-        sanitize(pname);
-        if (!check_plinfo_sanity(pname,pscore)) {
-    		fprintf(stderr,"crap player \"%s\" \"%s\" on srv \"%s:%i\"\n",pname,pscore,srv->getAddrStr(),srv->getPort());
-    		goto prd_bailout;
-        }
+		origname = strdup(pname);
+		sanitize(pname);
+		if (!check_plinfo_sanity(pname, pscore)) {
 
-        srv->addPlayer(pname, (int) strtol(pscore, NULL, 10));
-        free(pname); free(pscore);pname=pscore=NULL;
-    }
+			ndump = (char*)malloc(dumplen = (strlen(origname) + 1) * 3);
+			stringdump(ndump, origname, dumplen);
 
-    srv->setVersion(ver);
-    srv->setName(name);
-    srv->setMap(map);
-    srv->setGameType(type);
-    srv->setFlags((int) strtol(flags, NULL, 10));
-    srv->setProgress((int) strtol(prog, NULL, 10));
-    srv->setNumPlayers((int) strtol(numpl, NULL, 10));
-    srv->setMaxPlayers((int) strtol(maxpl, NULL, 10));
+			sndump = (char*)malloc(dumplen = (strlen(pname) + 1) * 3);
+			stringdump(sndump, pname, dumplen);
 
-    ret=true;
+			scdump = (char*)malloc(dumplen = (strlen(pscore) + 1) * 3);
+			stringdump(scdump, pscore, dumplen);
+
+			fprintf(stderr, "crap player on \"%s:%i\": name: %s, sane name: %s, score: %s (\"%s\", \"%s\", \"%s\")\n",
+					srv->getAddrStr(), srv->getPort(), ndump, sndump, scdump, pname, origname, pscore);
+			free(ndump);
+			free(scdump);
+			free(sndump);
+			free(origname);
+			goto prd_bailout;
+		}
+		free(origname);
+
+		srv->addPlayer(pname, (int) strtol(pscore, NULL, 10));
+		free(pname);free(pscore);
+		pname = pscore = NULL;
+	}
+
+	srv->setVersion(ver);
+	srv->setName(name);
+	srv->setMap(map);
+	srv->setGameType(type);
+	srv->setFlags((int) strtol(flags, NULL, 10));
+	srv->setProgress((int) strtol(prog, NULL, 10));
+	srv->setNumPlayers((int) strtol(numpl, NULL, 10));
+	srv->setMaxPlayers((int) strtol(maxpl, NULL, 10));
+
+	ret=true;
 
 prd_bailout:
-    if (sock >= 0) close(sock);
+	if (sock >= 0) close(sock);
 	if (server) delete server;
 	if (ver) free(ver);
 	if (name) free(name);
@@ -402,7 +429,7 @@ void output_servers()
 				shown_one = true;
 
 				fprintf(str_out,"\"%s%s%s\" - %s%s - %s%s (%s%i/%i%s) - %s%s:%i%s - %s%s%s - [%s%x;%i%s]\n",
-					colored?"\033[01;32m":"", srv->getName(),                      colored?"\033[0m":"",
+					colored?"\033[01;32m":"", srv->getName(),                             colored?"\033[0m":"",
 					colored?"\033[01;31m":"", srv->getGameType(), srv->getMap(),          colored?"\033[0m":"",
 					colored?"\033[01;36m":"", srv->getNumPlayers(), srv->getMaxPlayers(), colored?"\033[0m":"",
 					colored?"\033[01;34m":"", srv->getAddrStr(), srv->getPort(),          colored?"\033[0m":"",
@@ -457,7 +484,7 @@ void output_players()
 						colored?"\033[01;34m":"", srv->getAddrStr(), srv->getPort(),          colored?"\033[0m":"",
 						colored?"\033[01;31m":"", srv->getGameType(), srv->getMap(),          colored?"\033[0m":"",
 						colored?"\033[01;36m":"", srv->getNumPlayers(), srv->getMaxPlayers(), colored?"\033[0m":"",
-						colored?"\033[01;32m":"", srv->getName(),                      colored?"\033[0m":"");
+						colored?"\033[01;32m":"", srv->getName(),                             colored?"\033[0m":"");
 				}
 			}
 		}
@@ -522,6 +549,27 @@ bool is_numeric(const char *s)
 	return gotdig;
 }
 
+void stringdump(char *dest, const char *s, size_t bufsz)
+{
+	size_t cd = 0;
+	char tmpbuf[4];
+	const unsigned char *u = (const unsigned char*)s;
+	const unsigned char *ptr = u;
+
+	size_t maxchars = strlen(s) + 1;
+	if (maxchars*3 > bufsz) {
+		maxchars = bufsz/3;
+	}
+
+	*dest='\0';
+	while(cd < maxchars) {
+		sprintf(tmpbuf,"%02x ",*ptr);
+		strcat(dest,tmpbuf);
+		++cd;++ptr;
+	}
+	dest[cd*3-1]='\0';
+}
+
 u_int16_t getWord(const void* buf)
 {
 	return ntohs(*((u_int16_t*) buf));
@@ -540,6 +588,16 @@ u_int32_t getDWord(const void* buf)
 u_int32_t getDWordNC(const void* buf)
 {
 	return *((u_int32_t*) buf);
+}
+
+u_int64_t getMSTimestamp(const struct timeval *tv)
+{
+	return ((u_int64_t) (tv->tv_sec)) * 1000 + tv->tv_usec / 1000;
+}
+
+u_int64_t getMSInterval(struct timeval *from, struct timeval *to)
+{
+	return getMSTimestamp(to) - getMSTimestamp(from);
 }
 
 bool init(int argc, char **argv)
@@ -680,18 +738,24 @@ int main(int argc, char **argv)
 	int *tids;
 	std::set<u_int64_t> dup_kill;
 	std::list<u_int64_t> tmplist;
-	timeval tmstart, tmend, tgend;
-	int sucm;
+	timeval tmstart, tmend, tgstart, tgend;
+	int sucm = 0;
 	if (!init(argc, argv)) usage(stderr, argv[0], EXIT_FAILURE);
+
+	gettimeofday(&tmstart, NULL);
+	request_serverlists(&tmplist, &sucm);
+	gettimeofday(&tmend, NULL);
+
+	if (sucm == 0 || tmplist.empty()) {
+		if (verbosity >= 1) fprintf(stderr,"failed to retrieve anything from any master server (tried %llu ms), giving up\n", getMSInterval(&tmstart,&tmend));
+		exit(EXIT_FAILURE);
+	}
 
 	threads = (pthread_t*) malloc(sizeof(pthread_t) * num_threads);
 	tids = (int*) malloc(sizeof(int) * num_threads);
 	for (int z = 0; z < num_threads; ++z)
 		tids[z] = z;
 
-	gettimeofday(&tmstart, NULL);
-	request_serverlists(&tmplist, &sucm);
-	gettimeofday(&tmend, NULL);
 	for (std::list<u_int64_t>::const_iterator it = tmplist.begin(); it != tmplist.end(); ++it) {
 		if (dup_kill.count(*it)) continue;
 		dup_kill.insert(*it);
@@ -699,6 +763,8 @@ int main(int argc, char **argv)
 	}
 
 	if (verbosity >= 1) fprintf(stderr, "got %i servers from master servers\n", list_work.size());
+
+	gettimeofday(&tgstart, NULL);
 
 	for (int z = 0; z < num_threads; ++z)
 		if (pthread_create(&threads[z], NULL, process_queue, &tids[z]) != 0) fprintf(stderr, "failed to spawn thread %i\n", z);
@@ -724,12 +790,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "raw output will go to nowhere\n");
 	}
 
-	if (str_raw) {
-		u_int64_t tstart = ((u_int64_t) (tmstart.tv_sec)) * 1000 + tmstart.tv_usec / 1000;
-		unsigned int mdur = (int) ((((u_int64_t) (tmend.tv_sec)) * 1000 + tmend.tv_usec / 1000) - tstart);
-		unsigned int gdur = (int) ((((u_int64_t) (tgend.tv_sec)) * 1000 + tgend.tv_usec / 1000) - (tstart + mdur));
-		fprintf(str_raw, "D;%llu;%i;%i;%i;%i;%u;%u\n", tstart, sucm, pcount, list_done.size(), list_fail.size(), mdur, gdur);
-	}
+	if (str_raw)
+		fprintf(str_raw, "D;%llu;%i;%i;%i;%i;%llu;%llu\n",getMSTimestamp(&tmstart), sucm, pcount, list_done.size(), list_fail.size(), getMSInterval(&tmstart,&tmend), getMSInterval(&tgstart,&tgend));
 
 	if (!str_out && !(str_out = fopen(output_file, output_append ? "a" : "w"))) {
 		perror(output_file);
