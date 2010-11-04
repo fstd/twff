@@ -32,8 +32,13 @@ List of supported parameters:
       your proviced regular expressions, will be printed out.
     This will prevent empty servers from being printed.
 
-  -sp: also output players, for matching servers
+  -sp: for matching servers, display who is playing on it 
+    This does not affect the player matching expression specified through -p.
+    
   -l NUMBR: in combination with -sp, put NUMBER players on one line
+    By default, each player will be displayed on a new line.
+    Note that this is unrelated to the actual player matching.
+    
   -S: print stats as last line
   -ao do not truncate output file, i.e. append to it
   -aO do not truncate raw output file, i.e. append to it
@@ -43,14 +48,24 @@ List of supported parameters:
       but must be explicitely enabled by this option when desired.
     Specify a file, or a dash ``-'' for stdout.
 
-  -o FILE: write output to file instead of stdout
-  -m STRING: specify a comman seperated list of master servers
+  -o FILE: write output to FILE instead of stdout
+  
+  -m STRING: specify a comma-seperated list of master servers
+    For example: -m master3.teeworlds.com,example.org,127.0.0.1 
+    Note that there is no IPv6 support yet, neither here, nor in teeworlds.
+      
   -N NUMBER: print as many newlines before outputting
+    This might be useful when running inside of some kind of loop-script.
+      
   -r NUMBER: number of retries for unresponsive master servers
   -R NUMBER: number of retries for unresponsive game servers
-  -T NUMBER: number of threads
+  -T NUMBER: number of threads (default: 20)
+    Note that the master servers are always queried sequentially by
+      a single thread.
+     
   -tm NUMBER: read timeout for master servers in seconds
   -tg NUMBER: read timeout for game servers in seconds
+
   ---- Matching ----
 
   -p REGEXP: output all players with name matching REGEXP
@@ -71,6 +86,7 @@ List of supported parameters:
 
 if you want to see whats going on (to make sure its not stuck), call 
   it with -v, or even with -v -v
+
 
 regards, 
 

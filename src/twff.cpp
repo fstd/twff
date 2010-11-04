@@ -730,7 +730,7 @@ void usage(FILE *str,const char *a0, int ec)
 		"\t-m STRING: specify a comma seperated list of master servers\n"
 		"\t-r NUMBER: number of retries for unresponsive master servers\n"
 		"\t-R NUMBER: number of retries for unresponsive game servers\n"
-		"\t-T NUMBER: number of threads\n"
+		"\t-T NUMBER: number of threads (default: 20)\n"
 		"\t-tm NUMBER: read timeout for master servers in seconds\n"
 		"\t-tg NUMBER: read timeout for game servers in seconds\n"
 		"\t-p REGEXP: output all players with name matching REGEXP\n"
