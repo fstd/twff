@@ -4,7 +4,7 @@ and then terminate.
 hence, for a continous view, its best run in combination with watch, or in 
 the background writing to a file, with watch/tail as its front end.
 
-List of supported parameters:
+List of supported parameters: (slightly obsolete)
 
   -v: increase verbosity
 

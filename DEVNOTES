@@ -1,0 +1,6 @@
+planned features:
+	feed raw dump as input rather than querying any server [done]
+	make output fields and order adjustable
+	
+misc:
+	sanitize insane argument handling  

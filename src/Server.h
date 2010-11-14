@@ -21,13 +21,15 @@ class Server
 		char *_name, *_type, *_map, *_ver;
 		int _num_players, _max_players, _flags, _progress;
 
-		mutable char *_addr_str;
+		mutable char *_host_str;
+		mutable char *_ip_str;
 
 		std::set<class Player*> _players;
 
 	public:
 		Server(u_int64_t saddrport);
 		Server(u_int32_t saddr, u_int16_t sport);
+		Server(const char *addrport);
 		virtual ~Server();
 
 		u_int16_t getPort() const       {return _port;}
@@ -43,15 +45,16 @@ class Server
 		void setProgress(int i)         {_progress = i;}
 
 		const char *getName() const     {return _name;}
-		const char *getGameType() const {return _type;}
+		const char *getType() const     {return _type;}
 		const char *getMap() const      {return _map;}
-		const char *getVersion() const  {return _ver;}
-		int getNumPlayers() const       {return _num_players;}
-		int getMaxPlayers() const       {return _max_players;}
+		const char *getVer() const      {return _ver;}
+		int getNumPl() const            {return _num_players;}
+		int getMaxPl() const            {return _max_players;}
 		int getFlags() const            {return _flags;}
 		int getProgress() const         {return _progress;}
 
-		const char *getAddrStr() const;
+		const char *getHost() const;
+		const char *getIP() const;
 
 		const std::set<class Player*>& pmap() const {return _players;}
 		void addPlayer(const char *pname, int pscore);
@@ -62,14 +65,16 @@ class Player
 {
 	private:
 		char *_name;
+		class Server *_srv;
 		int _score;
 
 	public:
-		Player(const char *n, int s);
+		Player(class Server *srv, const char *name, int score);
 		virtual ~Player();
 
-		const char *getName() const {return _name;}
-		int getScore() const        {return _score;}
+		const char *getName() const     {return _name;}
+		class Server *getServer() const {return _srv;}
+		int getScore() const            {return _score;}
 };
 
 #endif /* SERVER_H_ */
