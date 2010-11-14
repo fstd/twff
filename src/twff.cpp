@@ -1705,6 +1705,7 @@ int main(int argc, char **argv)
 	std::list<Server*> list_svmatch; /* will contain all matched servers */
 	std::list<Player*> list_plmatch; /* will contain all matched players */
 
+	std::set<int>      tfail; /* will remember which threads we could not create */
 
 	/* ========================= initialization ========================= */
 
@@ -1769,16 +1770,20 @@ int main(int argc, char **argv)
 		/* store time, spawn all threads, wait for them to terminate, store time */
 		gettimeofday(&tgstart, NULL);
 		for (z = 0; z < g_num_threads; ++z)
-			if (pthread_create(&threads[z], NULL, process_queue, &tids[z]) != 0)
+			if (pthread_create(&threads[z], NULL, process_queue, &tids[z]) != 0) {
 				DBG(0, "failed to spawn thread %i\n", z);
-		for (z = 0; z < g_num_threads; ++z)
+				tfail.insert(z);
+			}
+		for (z = 0; z < g_num_threads; ++z) {
+			if (tfail.count(z)) continue;
 			if (pthread_join(threads[z], NULL) != 0)
 				DBG(0, "failed to join thread %i\n", z);
+		}
+		tfail.clear();
 		gettimeofday(&tgend, NULL);
 
 		/* we dont need this anymore */
 		free(threads); free(tids);
-
 
 		if (g_err_dirty) DBG(2, "\n");
 
