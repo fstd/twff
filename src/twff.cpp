@@ -1660,13 +1660,13 @@ void *process_queue(void*arg)
 
 			pthread_mutex_lock(&g_mutex_err);
 			DBG(2, "\rthread %02i: %i servers remaining      ", tid, g_list_work.size());
-			g_err_dirty = true;
+			if (g_verb >= 2) g_err_dirty = true;
 			pthread_mutex_unlock(&g_mutex_err);
 		} else {
 			pthread_mutex_unlock(&g_mutex_work);
 			pthread_mutex_lock(&g_mutex_err);
 			DBG(2, "\rthread %02i done                       ", tid);
-			g_err_dirty = true;
+			if (g_verb >= 2) g_err_dirty = true;
 			pthread_mutex_unlock(&g_mutex_err);
 			break;
 		}
@@ -1779,10 +1779,10 @@ int main(int argc, char **argv)
 			if (pthread_join(threads[z], NULL) != 0)
 				DBG(0, "failed to join thread %i\n", z);
 		}
-		tfail.clear();
 		gettimeofday(&tgend, NULL);
 
 		/* we dont need this anymore */
+		tfail.clear();
 		free(threads); free(tids);
 
 		if (g_err_dirty) DBG(2, "\n");
