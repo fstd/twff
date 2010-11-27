@@ -2,7 +2,7 @@ OBJS= twff.o Server.o bailsock.o
 LINKF= -lpthread
 LAUNCH= twff
 CXX= g++
-CXXFLAGS= -std=gnu++98 -g -O0 -Wall -Wextra -Wconversion 
+CXXFLAGS= -std=gnu++98 -g -O0 -Wall -Wextra -Wconversion -D_WITH_GETLINE
 
 .PHONY: all
 all: $(OBJS)

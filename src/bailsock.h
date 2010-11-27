@@ -8,6 +8,9 @@
 #ifndef BAILSOCK_H_
 #define BAILSOCK_H_
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 /*for simplicity, these just wrap socket functions and perror()+exit() on any errors.*/
 
 int bailsocket (int __domain, int __type, int __protocol, int timeout_sec);

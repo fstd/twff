@@ -5,8 +5,6 @@
  *      Author: fisted
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
@@ -14,6 +12,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+
+#include "bailsock.h"
 
 #define DBG(LVL,ARG...) do { if (g_str_err && g_verb >= (LVL)) fprintf(g_str_err,ARG); } while(0)
 
@@ -76,10 +76,10 @@ struct sockaddr_in *bailmkaddr(const char *host, u_int16_t port)
 		curbuf = overbuf = (char*)malloc(bufsz<<=1);
 	}
 
-	if (retval != 0)
-		{perror("gethostbyname_r");exit(EXIT_FAILURE);}
+//	if (retval != 0)
+//		{perror("gethostbyname_r");exit(EXIT_FAILURE);}
 
-	if (!res) {
+	if (retval != 0 || !res) {
 		DBG(2, "failed to mkaddr for %s:%i, errorcode: %i\n",host,port, errvar);
 		free(overbuf);
 		delete hp;
