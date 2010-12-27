@@ -121,6 +121,7 @@ int g_ms_retry            =  2;    /* number of retries for unresponsive master 
 int g_lead_nl             =  0;    /* number of newlines to print out before any output has been done */
 int g_players_per_line    =  1;    /* number of players to fit on a line, when displ. players of matched srvs */
 int g_svl_tol             =  0;    /* number of missing servers in server list we're going to tolerate */
+int g_progress_bar        =  0;    /* width of progress bar, uncool when verbose. 0 = off */
 
 bool g_summary            = false; /* output a trailing summary line about containing some stats */
 bool g_output_append      = false; /* append to output stream/file, instead of truncating it first */
@@ -1354,6 +1355,11 @@ bool process_args(int argc, char **argv)
 	for (z = 1; z < argc; ++z) {
 		if (strcmp("-v", argv[z]) == 0) {
 			++g_verb;
+		} else if (strcmp("-P", argv[z]) == 0) {
+			if (z + 1 < argc && argv[z + 1][0] && argv[z + 1][0] != '-')
+				g_progress_bar = strtol(argv[++z], NULL, 10);
+			else
+				g_progress_bar = 80;
 		} else if (strcmp("-E", argv[z]) == 0) {
 			if (z + 1 < argc) {
 				tmp = strdup(argv[++z]);
@@ -1645,10 +1651,16 @@ void *process_queue(void*arg)
 {
 	Server *sv;
 	bool ok;
-	int tid;
-
-	tid = *((int*) arg);
-
+	int tid, z;
+	char *pbbuf = NULL;	
+	int *args = (int*)arg;
+	int numsv;
+	
+	tid = args[0];
+	numsv = args[1];
+	if (numsv == 0) numsv = 1; //we'll divide
+	if (g_progress_bar) pbbuf = (char*)malloc(g_progress_bar+1);
+	
 	for (;;) {
 		sv = NULL;
 
@@ -1659,15 +1671,29 @@ void *process_queue(void*arg)
 			pthread_mutex_unlock(&g_mutex_work);
 
 			pthread_mutex_lock(&g_mutex_err);
-			DBG(2, "\rthread %02i: %i servers remaining      ", tid, g_list_work.size());
-			if (g_verb >= 2) g_err_dirty = true;
+			
+			if (g_progress_bar) {
+				fputs("\r|", g_str_err);
+				z = (int)(((double)g_progress_bar * (numsv - g_list_work.size())) / numsv);
+				while(z--) {
+					fputc('=', g_str_err);
+				}
+				fputs(">", g_str_err);
+				g_err_dirty = true;
+			} else {
+				DBG(2, "\rthread %02i: %i servers remaining      ", tid, g_list_work.size());
+				if (g_verb >= 2) g_err_dirty = true;
+
+			}
 			pthread_mutex_unlock(&g_mutex_err);
 		} else {
 			pthread_mutex_unlock(&g_mutex_work);
-			pthread_mutex_lock(&g_mutex_err);
-			DBG(2, "\rthread %02i done                       ", tid);
-			if (g_verb >= 2) g_err_dirty = true;
-			pthread_mutex_unlock(&g_mutex_err);
+			if (!g_progress_bar) {
+				pthread_mutex_lock(&g_mutex_err);
+				DBG(2, "\rthread %02i done                       ", tid);
+				if (g_verb >= 2) g_err_dirty = true;
+				pthread_mutex_unlock(&g_mutex_err);
+			}
 			break;
 		}
 
@@ -1684,7 +1710,7 @@ int main(int argc, char **argv)
 {
 	pthread_t *threads; /* array of thread identifiers we're going to use */
 
-	int *tids,         /* every thread gets an id, which is stored here */
+	int **tids,        /* thread id and server count (for progress bar display) */
 	    z,             /* thread spawn/join counter */
 	    pcount,        /* player count, only calculated when we're interested in */
 	    sucm = 0,      /* number of successfully contacted master servers */
@@ -1761,8 +1787,12 @@ int main(int argc, char **argv)
 
 		/* allocate thread stuff, init thread ids */
 		threads = (pthread_t*)malloc((sizeof (pthread_t)) * g_num_threads);
-		tids = (int*)malloc((sizeof(int)) * g_num_threads);
-		for (z = 0; z < g_num_threads; ++z) tids[z] = z;
+		tids = (int**)malloc((sizeof(int*)) * g_num_threads);
+		for (z = 0; z < g_num_threads; ++z) {
+			tids[z] = (int*)malloc(sizeof(int)*2);
+			tids[z][0] = z;
+			tids[z][1] = g_list_work.size();
+		}
 
 		DBG(1, "got %i servers from master servers (%i duplicates, took %llu ms), now fetching details\n",
 				g_list_work.size(), numdup, getMSInterval(&tmstart,&tmend));
@@ -1770,7 +1800,7 @@ int main(int argc, char **argv)
 		/* store time, spawn all threads, wait for them to terminate, store time */
 		gettimeofday(&tgstart, NULL);
 		for (z = 0; z < g_num_threads; ++z)
-			if (pthread_create(&threads[z], NULL, process_queue, &tids[z]) != 0) {
+			if (pthread_create(&threads[z], NULL, process_queue, tids[z]) != 0) {
 				DBG(0, "failed to spawn thread %i\n", z);
 				tfail.insert(z);
 			}
@@ -1783,7 +1813,10 @@ int main(int argc, char **argv)
 
 		/* we dont need this anymore */
 		tfail.clear();
-		free(threads); free(tids);
+		free(threads); 
+
+		for (z = 0; z < g_num_threads; ++z) free(tids[z]);	
+		free(tids);
 
 		if (g_err_dirty) DBG(2, "\n");
 
@@ -1850,6 +1883,10 @@ int main(int argc, char **argv)
 
 	gather_p_format_hints(&list_plmatch, &g_maxlen_p_adr, &g_maxlen_p_snm, &g_maxlen_p_typ, &g_maxlen_p_map,
 			&g_maxlen_p_ver, &g_maxlen_p_pnm);
+
+	if (g_str_out && g_lead_nl && (g_summary || !list_svmatch.empty() || !list_plmatch.empty()))
+		while(g_lead_nl--)
+			fputs("\n", g_str_out);
 
 	/* output matched servers, if any */
 	output_servers(&list_svmatch);
