@@ -136,7 +136,7 @@ bool g_no_empty_sv        = false; /* never match empty servers */
 bool g_sv_show_players    = false; /* for matched server, display their players */
 bool g_strict_sanitize    = true;  /* replace non-ascii characters (> 0x7f) with g_sane_char_strict */
 bool g_global_palign      = false; /* globally align players in coloums when displ. players of matched srvs */
-
+bool g_skip_last_nl       = false; /* skip the very last newline */
 char g_frame_char         = '*';   /* the character we want to draw our frame with */
 char g_sane_char          = ' ';   /* ascii control chars will be replaced with this */
 char g_sane_char_strict   = '_';   /* when strict sanitizing, chars > 0x7f will be replaced with this */
@@ -872,7 +872,8 @@ void output_servers(std::list<Server*> *slist)
 	    pl_column,   /* keeps track in which column we are when displ. players with more than 1 per line */
 	    pl_per_line; /* determines how many players to fit on a line */
 
-	size_t maxpname; /* used for finding the longest player name, if we align on a per-server basis */
+	size_t maxpname, /* used for finding the longest player name, if we align on a per-server basis */
+	       c = 0;    /* counts iterations */
 
 	/* crap call */
 	if (!g_str_out || slist->empty())
@@ -891,27 +892,29 @@ void output_servers(std::list<Server*> *slist)
 	else *frm = '\0';
 
 	for (it_sv = slist->begin(); it_sv != slist->end(); ++it_sv) {
+		++c;
 		sv = *it_sv;
 
 		/*TODO: split this into several parts */
 		/* get_color() will return empty strings if in non-colored mode,
 		 * frm will be empty when we're not going to draw a frame */
 		sv_line_len = snprintf(outbuf, sizeof outbuf,
-		    "%s%s%s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%2i/%2i%s %s %s%-*.*s%s%s%s\n",
+		    "%s%s%s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%2i/%2i%s %s %s%-*.*s%s%s%s%s",
 		        frm, g_display_frame?" ":"",
 		        get_color(CO_ADR), fw_adr, fw_adr, sv->getHost(),  get_color(0, 0), frm,
 		        get_color(CO_TYP), fw_typ, fw_typ, sv->getType(),  get_color(0, 0), frm,
 		        get_color(CO_MAP), fw_map, fw_map, sv->getMap(),   get_color(0, 0), frm,
 		        get_color(CO_NPL), sv->getNumPl(), sv->getMaxPl(), get_color(0, 0), frm,
 		        get_color(CO_SNM), fw_snm, fw_snm, sv->getName(),  get_color(0, 0),
-		        g_display_frame?" ":"", frm);
+		        g_display_frame?" ":"", frm, (g_skip_last_nl && c == slist->size())?"":"\n");
 
 		/* color sequences don't cause any output, so we need to subtract the color overhead again.
 		 * we have at least five color sequences (and their reset sequences) which are always there, plus
 		 * six additional ones when displaying a frame */
 		if (g_colored)
 			sv_line_len -= (5 + (g_display_frame?6:0)) * COLOR_OVERHEAD;
-		--sv_line_len; /* subtract the trailing newline as well */
+		if (g_skip_last_nl && c == slist->size())
+			--sv_line_len; /* subtract the trailing newline as well, if there is one */
 
 		/* if this is the first iteration, and we want a frame, display the head line */
 		if (g_display_frame && it_sv == slist->begin())
@@ -990,6 +993,8 @@ void output_players(std::list<Player*> *plist)
 	    fw_pnm,      /* output field width for player name */
 	    line_len;    /* used for formatting, to keep track of how many chars were printed */
 
+	size_t c = 0;    /* counts iterations */
+
 	/* crap call */
 	if (!g_str_out || plist->empty())
 		return;
@@ -1010,6 +1015,7 @@ void output_players(std::list<Player*> *plist)
 
 	/* walk over player list supplied to be printed out */
 	for (it_pl = plist->begin(); it_pl != plist->end(); ++it_pl) {
+		++c;
 		pl = *it_pl;
 		sv = pl->getServer();
 
@@ -1017,7 +1023,7 @@ void output_players(std::list<Player*> *plist)
 		/* get_color() will return empty strings if in non-colored mode,
 		 * frm will be empty when we're not going to draw a frame */
 		line_len = snprintf(outbuf, sizeof outbuf,
-		    "%s%s%s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%2i/%2i%s %s %s%-*.*s%s%s%s\n",
+		    "%s%s%s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%-*.*s%s %s %s%2i/%2i%s %s %s%-*.*s%s%s%s%s",
 		        frm, g_display_frame?" ":"",
 		        get_color(CO_PNM), fw_pnm, fw_pnm, pl->getName(),  get_color(0, 0), frm,
 		        get_color(CO_ADR), fw_adr,  fw_adr,  sv->getHost(),  get_color(0, 0), frm,
@@ -1025,7 +1031,7 @@ void output_players(std::list<Player*> *plist)
 		        get_color(CO_MAP), fw_map,  fw_map,  sv->getMap(),   get_color(0, 0), frm,
 		        get_color(CO_NPL),       sv->getNumPl(), sv->getMaxPl(), get_color(0, 0), frm,
 		        get_color(CO_SNM), fw_snm, fw_snm, sv->getName(),  get_color(0, 0),
-		        g_display_frame?" ":"", frm);
+		        g_display_frame?" ":"", frm, (g_skip_last_nl && c == plist->size())?"":"\n");
 
 		/* if this is the first iteration, and we want a frame, display the head line */
 		if (g_display_frame && it_pl == plist->begin())
@@ -1371,6 +1377,8 @@ bool process_args(int argc, char **argv)
 					g_str_err = str_nerr;
 				}
 			}
+		} else if (strcmp("-nn", argv[z]) == 0) {
+			g_skip_last_nl = true;
 		} else if (strcmp("-h", argv[z]) == 0) {
 			usage(stdout, argv[0], EXIT_SUCCESS);
 		} else if (strcmp("-m", argv[z]) == 0) {
@@ -1586,6 +1594,11 @@ bool init(int argc, char **argv)
 
 	if (!process_args(argc, argv))
 		return false;
+
+	if (g_skip_last_nl && (g_display_frame || g_sv_show_players)) {
+		DBG(0, "warning: -nn cannot be used together with -sp and/or -F, will ignore -nn\n");
+		g_skip_last_nl = false;
+	}
 
 	if (strcmp("-", g_output_file) != 0)
 		g_str_out = NULL; //we fopen later
@@ -1891,13 +1904,16 @@ int main(int argc, char **argv)
 	/* output matched servers, if any */
 	output_servers(&list_svmatch);
 
+	if (g_skip_last_nl && !list_plmatch.empty()) 
+		fputs("\n", g_str_out);
+
 	/* output matched players, if any */
 	output_players(&list_plmatch);
 
 	/* output summary line if wished */
 	if (g_str_out && g_summary)
-		fprintf(g_str_out, "global: %i players on %i servers (%i missed)\n",
-				pcount, g_list_done.size(), num_failed_gs);
+		fprintf(g_str_out, "%sglobal: %i players on %i servers (%i missed)%s", g_skip_last_nl?"\n":"", 
+				pcount, g_list_done.size(), num_failed_gs, g_skip_last_nl?"":"\n");
 
 	/* close streams */
 	if (g_str_out) fclose(g_str_out);
